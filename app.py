@@ -65,8 +65,8 @@ if student_file:
 # --- Compare and Display ---
 if st.button("🧮 Evaluate"):
     if model_file and student_file:
-        similarity_score = compare_answers(model_answer_text, student_answer_text)
-        st.metric(label="🔍 Similarity Score", value=f"{similarity_score}%", use_container_width=True)
+        similarity_score = compare_answers(model_answer_text, student_answer_text)       
+        st.metric(label="🔍 Similarity Score", value=f"{similarity_score}%")
         st.success(f"🎯 Suggested Marks: {(similarity_score / 100) * 10:.2f} / 10")
     else:
         st.warning("Please upload both model and student answer files.")
