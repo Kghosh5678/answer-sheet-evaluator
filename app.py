@@ -62,8 +62,9 @@ def get_text_from_files(files):
 
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
-    # Match question formats like: 1., Q2, Question-3, etc.
-    pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
+    # Match question formats like: 1., Q2, Question-3, Q2), Question 3) etc.
+    # pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
+    pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\)\.\:\-\s]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
     qna = {}
