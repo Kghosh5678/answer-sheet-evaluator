@@ -59,7 +59,7 @@ def get_text_from_files(files):
 
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
-    # Match formats like: 1., Q2, Question-3, etc.
+    # Match question formats like: 1., Q2, Question-3, etc.
     pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
@@ -121,7 +121,7 @@ if st.session_state.model_qna:
             "Upload student answer (PDF or images)",
             type=["pdf", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
-            key=f"student_files_{st.session_state.student_form_counter}"  # Dynamic key
+            key=f"student_files_{st.session_state.student_form_counter}"  # unique key each time
         )
 
         if st.button("🧮 Evaluate Student"):
@@ -166,18 +166,12 @@ with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state.student_name = ""
         st.session_state.student_evaluated = False
-        st.session_state.student_form_counter += 1  # Change uploader key to refresh
+        st.session_state.student_form_counter += 1  # Trigger uploader reset
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
-        keys_to_clear = [
-            "model_qna", "results", "student_name",
-            "student_files", "student_evaluated",
-            "model_files", "student_form_counter"
-        ]
-        for key in keys_to_clear:
-            if key in st.session_state:
-                del st.session_state[key]
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
         st.experimental_rerun()
 
 # --- STEP 3: Class Summary & Export ---
