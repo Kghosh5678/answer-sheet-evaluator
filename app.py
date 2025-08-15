@@ -171,7 +171,9 @@ with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
-        st.session_state["student_form_counter"] += 1  # Trigger fresh uploader
+        st.session_state["student_form_counter"] += 1
+        st.experimental_rerun()  # 🔁 Force immediate UI refresh
+
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
