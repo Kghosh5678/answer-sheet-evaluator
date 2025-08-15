@@ -43,16 +43,30 @@ def get_text_from_files(files):
             all_text += extract_text_from_image(file) + "\n"
     return all_text.strip()
 
+import re
+
 def split_answers_by_question(text):
-    pattern = r'(?<=\n|^)(\d+)\.\s'
-    parts = re.split(pattern, text)
+    # Normalize text to reduce OCR errors (optional)
+    text = text.replace('\r', '').replace('\t', '')
+
+    # Regex pattern to match various question indicators
+    pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s-]*)?(\d+)[\s\.:\-]'
+
+    # Add a dummy ending marker to catch the last answer
+    text += "\nQuestion 9999."
+
+    matches = list(re.finditer(pattern, text))
+
     qna = {}
-    for i in range(1, len(parts)-1, 2):
-        q_num = parts[i].strip()
-        ans = parts[i+1].strip()
-        if ans:
-            qna[q_num] = ans
+    for i in range(len(matches) - 1):
+        start = matches[i].start()
+        end = matches[i + 1].start()
+        q_num = matches[i].group(1).lstrip('0')  # Strip leading zeroes
+        answer = text[start:end].strip()
+        qna[q_num] = answer
+
     return qna
+
 
 def compare_answers(model_qna, student_qna):
     results = []
