@@ -30,6 +30,9 @@ if "results" not in st.session_state:
 if "student_evaluated" not in st.session_state:
     st.session_state.student_evaluated = False
 
+if "student_form_counter" not in st.session_state:
+    st.session_state.student_form_counter = 0
+
 # --- UTILITY FUNCTIONS ---
 
 def extract_text_from_pdf(file):
@@ -56,8 +59,7 @@ def get_text_from_files(files):
 
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
-    # Match question numbers with formats like:
-    # 1. , Q2. , Question-3: etc.
+    # Match formats like: 1., Q2, Question-3, etc.
     pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
@@ -114,11 +116,12 @@ if st.session_state.model_qna:
 
     if not st.session_state.student_evaluated:
         student_name = st.text_input("Enter student name or roll number", key="student_name")
+
         student_files = st.file_uploader(
             "Upload student answer (PDF or images)",
             type=["pdf", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
-            key="student_files"
+            key=f"student_files_{st.session_state.student_form_counter}"  # Dynamic key
         )
 
         if st.button("🧮 Evaluate Student"):
@@ -162,14 +165,15 @@ col1, col2 = st.columns(2)
 with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state.student_name = ""
-        st.session_state.student_files = None
         st.session_state.student_evaluated = False
+        st.session_state.student_form_counter += 1  # Change uploader key to refresh
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
         keys_to_clear = [
             "model_qna", "results", "student_name",
-            "student_files", "student_evaluated", "model_files"
+            "student_files", "student_evaluated",
+            "model_files", "student_form_counter"
         ]
         for key in keys_to_clear:
             if key in st.session_state:
