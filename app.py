@@ -7,19 +7,27 @@ from PIL import Image
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
+import pandas as pd
 
-# Streamlit config
+# --- CONFIG ---
 st.set_page_config(page_title="📚 Answer Sheet Evaluator", layout="centered")
 st.title("📚 Answer Sheet Evaluation App")
 
-# Load sentence transformer
+# --- LOAD MODEL ---
 @st.cache_resource
 def load_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
 model = load_model()
 
-# --- Utility Functions ---
+# --- SESSION STATE INIT ---
+if "model_qna" not in st.session_state:
+    st.session_state.model_qna = None
+
+if "results" not in st.session_state:
+    st.session_state.results = []
+
+# --- UTILITY FUNCTIONS ---
 
 def extract_text_from_pdf(file):
     text = ""
@@ -43,30 +51,25 @@ def get_text_from_files(files):
             all_text += extract_text_from_image(file) + "\n"
     return all_text.strip()
 
-import re
-
 def split_answers_by_question(text):
-    # Normalize text to reduce OCR errors (optional)
+    # Clean common OCR noise
     text = text.replace('\r', '').replace('\t', '')
 
-    # Regex pattern to match various question indicators
-    pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s-]*)?(\d+)[\s\.:\-]'
+    # Match: 1., Q2, Question-3, etc.
+    pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
 
-    # Add a dummy ending marker to catch the last answer
     text += "\nQuestion 9999."
-
     matches = list(re.finditer(pattern, text))
 
     qna = {}
     for i in range(len(matches) - 1):
         start = matches[i].start()
         end = matches[i + 1].start()
-        q_num = matches[i].group(1).lstrip('0')  # Strip leading zeroes
+        q_num = matches[i].group(1).lstrip('0')
         answer = text[start:end].strip()
         qna[q_num] = answer
 
     return qna
-
 
 def compare_answers(model_qna, student_qna):
     results = []
@@ -91,13 +94,10 @@ def compare_answers(model_qna, student_qna):
     average = round(total_similarity / count, 2) if count > 0 else 0
     return results, average
 
-# --- SESSION STATE ---
-if "model_qna" not in st.session_state:
-    st.session_state.model_qna = None
+# --- STEP 1: Upload Model Answer ---
+st.header("Step 1: Upload Model Answer Sheet")
 
-# --- Upload Model Answer ---
-st.header("Step 1: Upload Model Answer Sheet (One-Time)")
-model_files = st.file_uploader("Upload one or more pages (PDF or images)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, key="model")
+model_files = st.file_uploader("Upload model answer (PDF or images)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, key="model")
 
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
@@ -105,33 +105,50 @@ if model_files and st.button("📖 Process Model Answer"):
         model_qna = split_answers_by_question(model_text)
         st.session_state.model_qna = model_qna
 
-    st.success("Model answer saved. Ready to evaluate students.")
-    st.text_area("📄 Extracted Model Answers", model_text, height=300)
+    st.success("✅ Model answer saved. Ready to evaluate students.")
 
 elif st.session_state.model_qna:
-    st.info("✅ Model answer already uploaded. You can now upload student answers.")
+    st.info("✅ Model already uploaded. You may now evaluate students.")
 
-# --- Upload Student Answer ---
+# --- STEP 2: Upload Student Answer ---
 if st.session_state.model_qna:
-    st.header("Step 2: Upload Student Answer Sheet")
+    st.header("Step 2: Evaluate Student Answer Sheet")
 
+    student_name = st.text_input("Enter student name or roll number")
     student_files = st.file_uploader("Upload student answer (PDF or images)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True, key="student")
 
-    if student_files and st.button("🧮 Evaluate Student"):
-        with st.spinner("Extracting student answers..."):
-            student_text = get_text_from_files(student_files)
-            student_qna = split_answers_by_question(student_text)
+    if st.button("🧮 Evaluate Student"):
+        if not student_name:
+            st.warning("Please enter the student's name or ID.")
+        elif not student_files:
+            st.warning("Please upload the student's answer sheet.")
+        else:
+            with st.spinner("Extracting and evaluating..."):
+                student_text = get_text_from_files(student_files)
+                student_qna = split_answers_by_question(student_text)
 
-        st.text_area("📝 Extracted Student Answers", student_text, height=300)
+                results, avg = compare_answers(st.session_state.model_qna, student_qna)
 
-        st.subheader("🔍 Evaluation Result (Per Question)")
-        results, avg = compare_answers(st.session_state.model_qna, student_qna)
+                st.subheader(f"🔍 Results for {student_name}")
+                for q_num, score in results:
+                    if isinstance(score, (float, int)):
+                        st.metric(f"Q{q_num}", f"{score}%")
+                    else:
+                        st.warning(f"Q{q_num}: {score}")
 
-        for q_num, score in results:
-            if isinstance(score, (float, int)):
-                st.metric(f"Question {q_num}", f"{score}%")
-            else:
-                st.warning(f"Question {q_num}: {score}")
+                st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
 
-        st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
+                # Save to session state
+                result_row = {"Student": student_name, "Total (%)": avg, "Marks (/10)": round(avg / 100 * 10, 2)}
+                for q_num, score in results:
+                    result_row[f"Q{q_num}"] = score
+                st.session_state.results.append(result_row)
 
+# --- STEP 3: Export Class Results ---
+if st.session_state.results:
+    st.header("📋 Class Evaluation Summary")
+    df = pd.DataFrame(st.session_state.results)
+    st.dataframe(df, use_container_width=True)
+
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Download Full Result (CSV)", data=csv, file_name="class_results.csv", mime='text/csv')

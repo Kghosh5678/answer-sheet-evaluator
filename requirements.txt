@@ -4,3 +4,4 @@ pdfplumber
 Pillow
 sentence-transformers
 scikit-learn
+pandas
