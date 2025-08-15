@@ -8,7 +8,6 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 import pandas as pd
-from io import BytesIO
 
 # --- CONFIG ---
 st.set_page_config(page_title="📚 Answer Sheet Evaluator", layout="centered")
@@ -28,13 +27,15 @@ session_defaults = {
     "student_evaluated": False,
     "student_form_counter": 0,
     "student_name": "",
-    "captured_pages": []  # NEW: holds camera-captured images
+    "model_captured_pages": [],
+    "student_captured_pages": [],
 }
 for key, val in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 # --- UTILITY FUNCTIONS ---
+
 def extract_text_from_pdf(file):
     text = ""
     with pdfplumber.open(file) as pdf:
@@ -99,33 +100,55 @@ def compare_answers(model_qna, student_qna):
     return results, average
 
 # --- STEP 1: Upload Model Answer ---
-st.header("Upload Model Answer Sheet")
-model_files = st.file_uploader(
-    "Upload model answer (PDF or images)",
-    type=["pdf", "png", "jpg", "jpeg"],
-    accept_multiple_files=True,
-    key="model_files"
-)
+st.header("📘 Upload Model Answer Sheet")
 
-if model_files and st.button("📖 Process Model Answer"):
+model_input_mode = st.radio("Model Answer Input Method", ["📁 Upload Files", "📸 Use Camera"])
+
+if model_input_mode == "📁 Upload Files":
+    model_files = st.file_uploader(
+        "Upload model answer (PDF or images)",
+        type=["pdf", "png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key="model_files"
+    )
+else:
+    model_img = st.camera_input("Capture model answer page")
+    if model_img:
+        st.session_state["model_captured_pages"].append(model_img)
+        st.success(f"✅ Model Page {len(st.session_state['model_captured_pages'])} captured!")
+
+    if st.session_state["model_captured_pages"]:
+        st.write(f"🖼️ {len(st.session_state['model_captured_pages'])} model page(s) captured.")
+        if st.button("🗑️ Clear Model Captures"):
+            st.session_state["model_captured_pages"] = []
+
+if st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
-        model_text = get_text_from_files(model_files)
+        if model_input_mode == "📁 Upload Files" and model_files:
+            model_text = get_text_from_files(model_files)
+        elif model_input_mode == "📸 Use Camera" and st.session_state["model_captured_pages"]:
+            model_text = get_text_from_captured_images(st.session_state["model_captured_pages"])
+        else:
+            st.warning("Please upload or capture model answer pages.")
+            st.stop()
+
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
-    st.success("✅ Model answer saved. Ready to evaluate students.")
+        st.success("✅ Model answer saved. Ready to evaluate students.")
+
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
 
 # --- STEP 2: Evaluate Student Answers ---
 if st.session_state["model_qna"]:
-    st.header("Evaluate Student Answer Sheet")
+    st.header("📗 Evaluate Student Answer Sheet")
 
     if not st.session_state["student_evaluated"]:
         st.session_state["student_name"] = st.text_input(
             "Enter student name or roll number", key="student_name_input"
         )
 
-        input_mode = st.radio("Choose Input Method", ["📁 Upload Files", "📸 Use Camera"])
+        input_mode = st.radio("Student Answer Input Method", ["📁 Upload Files", "📸 Use Camera"])
 
         if input_mode == "📁 Upload Files":
             student_files = st.file_uploader(
@@ -135,29 +158,29 @@ if st.session_state["model_qna"]:
                 key=f"student_files_{st.session_state['student_form_counter']}"
             )
         else:
-            img = st.camera_input("Capture a page of student answer")
-            if img:
-                st.session_state["captured_pages"].append(img)
-                st.success(f"✅ Page {len(st.session_state['captured_pages'])} captured!")
+            student_img = st.camera_input("Capture student answer page")
+            if student_img:
+                st.session_state["student_captured_pages"].append(student_img)
+                st.success(f"✅ Student Page {len(st.session_state['student_captured_pages'])} captured!")
 
-            if st.session_state["captured_pages"]:
-                st.write(f"🖼️ {len(st.session_state['captured_pages'])} page(s) captured.")
-                if st.button("🗑️ Clear Captured Pages"):
-                    st.session_state["captured_pages"] = []
+            if st.session_state["student_captured_pages"]:
+                st.write(f"🖼️ {len(st.session_state['student_captured_pages'])} student page(s) captured.")
+                if st.button("🗑️ Clear Student Captures"):
+                    st.session_state["student_captured_pages"] = []
 
         if st.button("🧮 Evaluate Student"):
             if not st.session_state["student_name"]:
                 st.warning("Please enter the student's name or ID.")
             elif input_mode == "📁 Upload Files" and not student_files:
                 st.warning("Please upload the student's answer sheet.")
-            elif input_mode == "📸 Use Camera" and not st.session_state["captured_pages"]:
+            elif input_mode == "📸 Use Camera" and not st.session_state["student_captured_pages"]:
                 st.warning("Please capture at least one page.")
             else:
                 with st.spinner("Extracting and evaluating..."):
                     if input_mode == "📁 Upload Files":
                         student_text = get_text_from_files(student_files)
                     else:
-                        student_text = get_text_from_captured_images(st.session_state["captured_pages"])
+                        student_text = get_text_from_captured_images(st.session_state["student_captured_pages"])
 
                     student_qna = split_answers_by_question(student_text)
                     results, avg = compare_answers(st.session_state["model_qna"], student_qna)
@@ -182,7 +205,7 @@ if st.session_state["model_qna"]:
                     st.session_state["results"].append(result_row)
 
                     st.session_state["student_evaluated"] = True
-                    st.session_state["captured_pages"] = []  # Clear camera cache
+                    st.session_state["student_captured_pages"] = []
 
     else:
         st.success("✅ Student evaluated and added to summary.")
