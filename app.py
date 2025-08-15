@@ -95,7 +95,7 @@ def compare_answers(model_qna, student_qna):
     return results, average
 
 # --- STEP 1: Upload Model Answer ---
-st.header("Step 1: Upload Model Answer Sheet")
+st.header("Upload Model Answer Sheet")
 model_files = st.file_uploader(
     "Upload model answer (PDF or images)",
     type=["pdf", "png", "jpg", "jpeg"],
@@ -115,7 +115,7 @@ elif st.session_state["model_qna"]:
 
 # --- STEP 2: Evaluate Student Answers ---
 if st.session_state["model_qna"]:
-    st.header("Step 2: Evaluate Student Answer Sheet")
+    st.header("Evaluate Student Answer Sheet")
 
     if not st.session_state["student_evaluated"]:
         st.session_state["student_name"] = st.text_input(
