@@ -1,3 +1,5 @@
+# app.py
+
 import streamlit as st
 import pytesseract
 import pdfplumber
@@ -7,16 +9,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 import re
 import pandas as pd
 
+# --- CONFIG ---
 st.set_page_config(page_title="📚 Answer Sheet Evaluator", layout="centered")
 st.title("📚 Answer Sheet Evaluation App")
 
+# --- LOAD MODEL ---
 @st.cache_resource
 def load_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
 model = load_model()
 
-# Initialize session state variables
+# --- SESSION STATE INIT ---
 if "model_qna" not in st.session_state:
     st.session_state["model_qna"] = None
 
@@ -32,7 +36,8 @@ if "student_form_counter" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
 
-# Functions to extract text
+# --- UTILITY FUNCTIONS ---
+
 def extract_text_from_pdf(file):
     text = ""
     with pdfplumber.open(file) as pdf:
@@ -55,9 +60,9 @@ def get_text_from_files(files):
             all_text += extract_text_from_image(file) + "\n"
     return all_text.strip()
 
-# Splitting text by question number
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
+    # Match question formats like: 1., Q2, Question-3, etc.
     pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
@@ -89,7 +94,7 @@ def compare_answers(model_qna, student_qna):
     average = round(total_similarity / count, 2) if count > 0 else 0
     return results, average
 
-# Step 1: Upload Model Answer
+# --- STEP 1: Upload Model Answer ---
 st.header("Step 1: Upload Model Answer Sheet")
 model_files = st.file_uploader(
     "Upload model answer (PDF or images)",
@@ -104,18 +109,17 @@ if model_files and st.button("📖 Process Model Answer"):
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
     st.success("✅ Model answer saved. Ready to evaluate students.")
+
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
 
-# Step 2: Evaluate Student Answers
+# --- STEP 2: Evaluate Student Answers ---
 if st.session_state["model_qna"]:
     st.header("Step 2: Evaluate Student Answer Sheet")
 
     if not st.session_state["student_evaluated"]:
         st.session_state["student_name"] = st.text_input(
-            "Enter student name or roll number",
-            value=st.session_state["student_name"],
-            key="student_name_input"
+            "Enter student name or roll number", key="student_name_input"
         )
 
         student_files = st.file_uploader(
@@ -160,34 +164,22 @@ if st.session_state["model_qna"]:
     else:
         st.success("✅ Student evaluated and added to summary.")
 
-# Reset buttons with callbacks
-
-def reset_next_student():
-    st.session_state["student_name"] = ""
-    st.session_state["student_evaluated"] = False
-    st.session_state["student_form_counter"] += 1
-    st.experimental_rerun()
-
-def reset_all():
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.experimental_rerun()
-
+# --- Reset Buttons ---
 col1, col2 = st.columns(2)
 
 with col1:
-    st.button(
-        "➕ Add Next Student (Clear Student Input)", 
-        on_click=reset_next_student
-    )
+    if st.button("➕ Add Next Student (Clear Student Input)"):
+        st.session_state["student_name"] = ""
+        st.session_state["student_evaluated"] = False
+        st.session_state["student_form_counter"] += 1  # Trigger fresh uploader
 
 with col2:
-    st.button(
-        "🔄 Reset Entire App (Start Over)", 
-        on_click=reset_all
-    )
+    if st.button("🔄 Reset Entire App (Start Over)"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.experimental_rerun()
 
-# Step 3: Class Summary & Export
+# --- STEP 3: Class Summary & Export ---
 if st.session_state["results"]:
     st.header("📋 Class Evaluation Summary")
     df = pd.DataFrame(st.session_state["results"])
