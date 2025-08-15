@@ -160,25 +160,32 @@ if st.session_state["model_qna"]:
     else:
         st.success("✅ Student evaluated and added to summary.")
 
-# Reset buttons
-col1, col2 = st.columns(2)
+# Reset buttons with callbacks
 
-with col1:
-    add_next_clicked = st.button("➕ Add Next Student (Clear Student Input)")
-
-with col2:
-    reset_all_clicked = st.button("🔄 Reset Entire App (Start Over)")
-
-if add_next_clicked:
+def reset_next_student():
     st.session_state["student_name"] = ""
     st.session_state["student_evaluated"] = False
     st.session_state["student_form_counter"] += 1
     st.experimental_rerun()
 
-if reset_all_clicked:
+def reset_all():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.experimental_rerun()
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.button(
+        "➕ Add Next Student (Clear Student Input)", 
+        on_click=reset_next_student
+    )
+
+with col2:
+    st.button(
+        "🔄 Reset Entire App (Start Over)", 
+        on_click=reset_all
+    )
 
 # Step 3: Class Summary & Export
 if st.session_state["results"]:
