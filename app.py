@@ -22,16 +22,19 @@ model = load_model()
 
 # --- SESSION STATE INIT ---
 if "model_qna" not in st.session_state:
-    st.session_state.model_qna = None
+    st.session_state["model_qna"] = None
 
 if "results" not in st.session_state:
-    st.session_state.results = []
+    st.session_state["results"] = []
 
 if "student_evaluated" not in st.session_state:
-    st.session_state.student_evaluated = False
+    st.session_state["student_evaluated"] = False
 
 if "student_form_counter" not in st.session_state:
-    st.session_state.student_form_counter = 0
+    st.session_state["student_form_counter"] = 0
+
+if "student_name" not in st.session_state:
+    st.session_state["student_name"] = ""
 
 # --- UTILITY FUNCTIONS ---
 
@@ -104,28 +107,30 @@ if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
         model_text = get_text_from_files(model_files)
         model_qna = split_answers_by_question(model_text)
-        st.session_state.model_qna = model_qna
+        st.session_state["model_qna"] = model_qna
     st.success("✅ Model answer saved. Ready to evaluate students.")
 
-elif st.session_state.model_qna:
+elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
 
 # --- STEP 2: Evaluate Student Answers ---
-if st.session_state.model_qna:
+if st.session_state["model_qna"]:
     st.header("Step 2: Evaluate Student Answer Sheet")
 
-    if not st.session_state.student_evaluated:
-        student_name = st.text_input("Enter student name or roll number", key="student_name")
+    if not st.session_state["student_evaluated"]:
+        st.session_state["student_name"] = st.text_input(
+            "Enter student name or roll number", key="student_name_input"
+        )
 
         student_files = st.file_uploader(
             "Upload student answer (PDF or images)",
             type=["pdf", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
-            key=f"student_files_{st.session_state.student_form_counter}"  # unique key each time
+            key=f"student_files_{st.session_state['student_form_counter']}"
         )
 
         if st.button("🧮 Evaluate Student"):
-            if not student_name:
+            if not st.session_state["student_name"]:
                 st.warning("Please enter the student's name or ID.")
             elif not student_files:
                 st.warning("Please upload the student's answer sheet.")
@@ -133,9 +138,9 @@ if st.session_state.model_qna:
                 with st.spinner("Extracting and evaluating..."):
                     student_text = get_text_from_files(student_files)
                     student_qna = split_answers_by_question(student_text)
-                    results, avg = compare_answers(st.session_state.model_qna, student_qna)
+                    results, avg = compare_answers(st.session_state["model_qna"], student_qna)
 
-                    st.subheader(f"🔍 Results for {student_name}")
+                    st.subheader(f"🔍 Results for {st.session_state['student_name']}")
                     for q_num, score in results:
                         if isinstance(score, (float, int)):
                             st.metric(f"Q{q_num}", f"{score}%")
@@ -146,15 +151,15 @@ if st.session_state.model_qna:
 
                     # Save to session state
                     result_row = {
-                        "Student": student_name,
+                        "Student": st.session_state["student_name"],
                         "Total (%)": avg,
                         "Marks (/10)": round(avg / 100 * 10, 2)
                     }
                     for q_num, score in results:
                         result_row[f"Q{q_num}"] = score
-                    st.session_state.results.append(result_row)
+                    st.session_state["results"].append(result_row)
 
-                    st.session_state.student_evaluated = True
+                    st.session_state["student_evaluated"] = True
 
     else:
         st.success("✅ Student evaluated and added to summary.")
@@ -164,9 +169,9 @@ col1, col2 = st.columns(2)
 
 with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
-        st.session_state.student_name = ""
-        st.session_state.student_evaluated = False
-        st.session_state.student_form_counter += 1  # Trigger uploader reset
+        st.session_state["student_name"] = ""
+        st.session_state["student_evaluated"] = False
+        st.session_state["student_form_counter"] += 1  # Trigger fresh uploader
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
@@ -175,9 +180,9 @@ with col2:
         st.experimental_rerun()
 
 # --- STEP 3: Class Summary & Export ---
-if st.session_state.results:
+if st.session_state["results"]:
     st.header("📋 Class Evaluation Summary")
-    df = pd.DataFrame(st.session_state.results)
+    df = pd.DataFrame(st.session_state["results"])
     st.dataframe(df, use_container_width=True)
 
     csv = df.to_csv(index=False).encode('utf-8')
