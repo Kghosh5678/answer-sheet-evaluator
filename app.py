@@ -28,11 +28,11 @@ if "results" not in st.session_state:
 if "student_evaluated" not in st.session_state:
     st.session_state["student_evaluated"] = False
 
-if "student_form_counter" not in st.session_state:
-    st.session_state["student_form_counter"] = 0
-
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
+
+if "student_files" not in st.session_state:
+    st.session_state["student_files"] = None
 
 # --- UTILITY FUNCTIONS ---
 
@@ -139,17 +139,17 @@ if st.session_state["model_qna"]:
             "Enter student name or roll number", key="student_name_input"
         )
 
-        student_files = st.file_uploader(
+        st.session_state["student_files"] = st.file_uploader(
             "Upload student answer (PDF or images)",
             type=["pdf", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
-            key=f"student_files_{st.session_state['student_form_counter']}"
+            key="student_files"
         )
 
-        if student_files:
+        if st.session_state["student_files"]:
             st.subheader("🖼️ Student Answer Preview")
             student_cols = st.columns(3)
-            for idx, file in enumerate(student_files):
+            for idx, file in enumerate(st.session_state["student_files"]):
                 if file.type.startswith("image"):
                     with student_cols[idx % 3]:
                         st.image(file, caption=file.name, use_container_width=True)
@@ -157,11 +157,11 @@ if st.session_state["model_qna"]:
         if st.button("🧮 Evaluate Student"):
             if not st.session_state["student_name"]:
                 st.warning("Please enter the student's name or ID.")
-            elif not student_files:
+            elif not st.session_state["student_files"]:
                 st.warning("Please upload the student's answer sheet.")
             else:
                 with st.spinner("Extracting and evaluating..."):
-                    student_text = get_text_from_files(student_files)
+                    student_text = get_text_from_files(st.session_state["student_files"])
                     student_qna = split_answers_by_question(student_text)
 
                     st.text("🧪 Extracted Student Answers:")
@@ -172,10 +172,10 @@ if st.session_state["model_qna"]:
                     st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
                     table_data = []
                     for q_num, score in results:
-                        if isinstance(score, (float, int)):
-                            table_data.append({"Question": f"Q{q_num}", "Similarity (%)": f"{score}%"})
-                        else:
-                            table_data.append({"Question": f"Q{q_num}", "Similarity (%)": score})
+                        table_data.append({
+                            "Question": f"Q{q_num}",
+                            "Similarity (%)": f"{score}%" if isinstance(score, (float, int)) else score
+                        })
                     df_result = pd.DataFrame(table_data)
                     st.dataframe(df_result, use_container_width=True)
 
@@ -201,7 +201,7 @@ with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
-        st.session_state["student_form_counter"] += 1
+        st.session_state["student_files"] = None
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
