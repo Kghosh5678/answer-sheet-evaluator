@@ -31,10 +31,7 @@ if "student_evaluated" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
 
-if "student_files" not in st.session_state:
-    st.session_state["student_files"] = None
-
-# --- UTILITY FUNCTIONS ---
+# --- FUNCTIONS ---
 
 def extract_text_from_pdf(file):
     text = ""
@@ -111,21 +108,13 @@ model_files = st.file_uploader(
     key="model_files"
 )
 
-if model_files:
-    st.subheader("🖼️ Model Answer Preview")
-    model_cols = st.columns(3)
-    for idx, file in enumerate(model_files):
-        if file.type.startswith("image"):
-            with model_cols[idx % 3]:
-                st.image(file, caption=file.name, use_container_width=True)
-
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
         model_text = get_text_from_files(model_files)
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
         st.success("✅ Model answer saved. Ready to evaluate students.")
-        st.text("🔎 Extracted Model Answers:")
+        st.text("🔍 Extracted Model Answers:")
         st.json(model_qna)
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
@@ -139,29 +128,21 @@ if st.session_state["model_qna"]:
             "Enter student name or roll number", key="student_name_input"
         )
 
-        st.session_state["student_files"] = st.file_uploader(
+        student_files = st.file_uploader(
             "Upload student answer (PDF or images)",
             type=["pdf", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
             key="student_files"
         )
 
-        if st.session_state["student_files"]:
-            st.subheader("🖼️ Student Answer Preview")
-            student_cols = st.columns(3)
-            for idx, file in enumerate(st.session_state["student_files"]):
-                if file.type.startswith("image"):
-                    with student_cols[idx % 3]:
-                        st.image(file, caption=file.name, use_container_width=True)
-
-        if st.button("🧮 Evaluate Student"):
+        if student_files and st.button("🧮 Evaluate Student"):
             if not st.session_state["student_name"]:
                 st.warning("Please enter the student's name or ID.")
-            elif not st.session_state["student_files"]:
+            elif not student_files:
                 st.warning("Please upload the student's answer sheet.")
             else:
                 with st.spinner("Extracting and evaluating..."):
-                    student_text = get_text_from_files(st.session_state["student_files"])
+                    student_text = get_text_from_files(student_files)
                     student_qna = split_answers_by_question(student_text)
 
                     st.text("🧪 Extracted Student Answers:")
@@ -201,7 +182,8 @@ with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
-        st.session_state["student_files"] = None
+        if "student_files" in st.session_state:
+            del st.session_state["student_files"]
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
