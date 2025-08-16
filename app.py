@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 import pytesseract
 import pdfplumber
@@ -48,7 +46,7 @@ def extract_text_from_pdf(file):
     return text.strip()
 
 def extract_text_from_image(file):
-    image = Image.open(file).convert("L")  # Convert to grayscale
+    image = Image.open(file).convert("L")
     return pytesseract.image_to_string(image, lang='eng').strip()
 
 def get_text_from_files(files):
@@ -82,18 +80,25 @@ def compare_answers(model_qna, student_qna):
     results = []
     total_similarity = 0
     count = 0
+
     for q_num in model_qna:
-        if q_num in student_qna:
-            model_ans = model_qna[q_num]
-            student_ans = student_qna[q_num]
-            embeddings = model.encode([model_ans, student_ans])
-            similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
-            percent = round(similarity * 100, 2)
+        model_ans = model_qna[q_num]
+        student_ans = student_qna.get(q_num)
+
+        if student_ans:
+            if len(model_ans) < 10 and len(student_ans) < 10:
+                percent = 100.0 if model_ans.strip() == student_ans.strip() else 0.0
+            else:
+                embeddings = model.encode([model_ans, student_ans])
+                similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
+                percent = round(similarity * 100, 2)
+
             results.append((q_num, percent))
             total_similarity += percent
             count += 1
         else:
             results.append((q_num, "❌ Not Answered"))
+
     average = round(total_similarity / count, 2) if count > 0 else 0
     return results, average
 
@@ -119,7 +124,9 @@ if model_files and st.button("📖 Process Model Answer"):
         model_text = get_text_from_files(model_files)
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
-    st.success("✅ Model answer saved. Ready to evaluate students.")
+        st.success("✅ Model answer saved. Ready to evaluate students.")
+        st.text("🔎 Extracted Model Answers:")
+        st.json(model_qna)
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
 
@@ -156,9 +163,12 @@ if st.session_state["model_qna"]:
                 with st.spinner("Extracting and evaluating..."):
                     student_text = get_text_from_files(student_files)
                     student_qna = split_answers_by_question(student_text)
+
+                    st.text("🧪 Extracted Student Answers:")
+                    st.json(student_qna)
+
                     results, avg = compare_answers(st.session_state["model_qna"], student_qna)
 
-                    # Show question-wise table
                     st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
                     table_data = []
                     for q_num, score in results:
@@ -169,10 +179,8 @@ if st.session_state["model_qna"]:
                     df_result = pd.DataFrame(table_data)
                     st.dataframe(df_result, use_container_width=True)
 
-                    # Show final score
                     st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
 
-                    # Save to session state
                     result_row = {
                         "Student": st.session_state["student_name"],
                         "Total (%)": avg,
