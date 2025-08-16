@@ -48,23 +48,25 @@ def extract_text_from_pdf(file):
     return text.strip()
 
 def extract_text_from_image(file):
-    image = Image.open(file)
-    return pytesseract.image_to_string(image).strip()
+    image = Image.open(file).convert("L")  # Convert to grayscale
+    return pytesseract.image_to_string(image, lang='eng').strip()
 
 def get_text_from_files(files):
     all_text = ""
+    files = sorted(files, key=lambda x: x.name)
     for file in files:
         if file.name.endswith('.pdf'):
             all_text += extract_text_from_pdf(file) + "\n"
         else:
-            all_text += extract_text_from_image(file) + "\n"
+            try:
+                all_text += extract_text_from_image(file) + "\n"
+            except Exception as e:
+                st.error(f"❌ Could not read image {file.name}: {e}")
     return all_text.strip()
 
 def split_answers_by_question(text):
-    text = text.replace('\r', '').replace('\t', '')
-    # Match question formats like: 1., Q2, Question-3, Q2), Question 3) etc.
-    # pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\s\.:\-]'
-    pattern = r'(?:^|\n)\s*(?:Q(?:uestion)?[\s\-]*)?(\d+)[\)\.\:\-\s]'
+    text = text.replace('\r', '').replace('\t', '')    
+    pattern = r'(?:^|\n)\s*(?:[Qq](?:uestion)?[\s\-]*)?(\d{1,4})[\)\.\:\-\s]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
     qna = {}
@@ -104,13 +106,20 @@ model_files = st.file_uploader(
     key="model_files"
 )
 
+if model_files:
+    st.subheader("🖼️ Model Answer Preview")
+    model_cols = st.columns(3)
+    for idx, file in enumerate(model_files):
+        if file.type.startswith("image"):
+            with model_cols[idx % 3]:
+                st.image(file, caption=file.name, use_column_width=True)
+
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
         model_text = get_text_from_files(model_files)
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
     st.success("✅ Model answer saved. Ready to evaluate students.")
-
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
 
@@ -129,6 +138,14 @@ if st.session_state["model_qna"]:
             accept_multiple_files=True,
             key=f"student_files_{st.session_state['student_form_counter']}"
         )
+
+        if student_files:
+            st.subheader("🖼️ Student Answer Preview")
+            student_cols = st.columns(3)
+            for idx, file in enumerate(student_files):
+                if file.type.startswith("image"):
+                    with student_cols[idx % 3]:
+                        st.image(file, caption=file.name, use_column_width=True)
 
         if st.button("🧮 Evaluate Student"):
             if not st.session_state["student_name"]:
@@ -161,7 +178,6 @@ if st.session_state["model_qna"]:
                     st.session_state["results"].append(result_row)
 
                     st.session_state["student_evaluated"] = True
-
     else:
         st.success("✅ Student evaluated and added to summary.")
 
@@ -172,7 +188,7 @@ with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
-        st.session_state["student_form_counter"] += 1  # Trigger fresh uploader
+        st.session_state["student_form_counter"] += 1
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
