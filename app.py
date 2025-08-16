@@ -65,7 +65,7 @@ def get_text_from_files(files):
     return all_text.strip()
 
 def split_answers_by_question(text):
-    text = text.replace('\r', '').replace('\t', '')    
+    text = text.replace('\r', '').replace('\t', '')
     pattern = r'(?:^|\n)\s*(?:[Qq](?:uestion)?[\s\-]*)?(\d{1,4})[\)\.\:\-\s]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
@@ -112,7 +112,7 @@ if model_files:
     for idx, file in enumerate(model_files):
         if file.type.startswith("image"):
             with model_cols[idx % 3]:
-                st.image(file, caption=file.name, use_column_width=True)
+                st.image(file, caption=file.name, use_container_width=True)
 
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
@@ -145,7 +145,7 @@ if st.session_state["model_qna"]:
             for idx, file in enumerate(student_files):
                 if file.type.startswith("image"):
                     with student_cols[idx % 3]:
-                        st.image(file, caption=file.name, use_column_width=True)
+                        st.image(file, caption=file.name, use_container_width=True)
 
         if st.button("🧮 Evaluate Student"):
             if not st.session_state["student_name"]:
@@ -158,13 +158,18 @@ if st.session_state["model_qna"]:
                     student_qna = split_answers_by_question(student_text)
                     results, avg = compare_answers(st.session_state["model_qna"], student_qna)
 
-                    st.subheader(f"🔍 Results for {st.session_state['student_name']}")
+                    # Show question-wise table
+                    st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
+                    table_data = []
                     for q_num, score in results:
                         if isinstance(score, (float, int)):
-                            st.metric(f"Q{q_num}", f"{score}%")
+                            table_data.append({"Question": f"Q{q_num}", "Similarity (%)": f"{score}%"})
                         else:
-                            st.warning(f"Q{q_num}: {score}")
+                            table_data.append({"Question": f"Q{q_num}", "Similarity (%)": score})
+                    df_result = pd.DataFrame(table_data)
+                    st.dataframe(df_result, use_container_width=True)
 
+                    # Show final score
                     st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
 
                     # Save to session state
