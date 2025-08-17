@@ -123,6 +123,8 @@ def compare_answers(model_qna, student_qna):
     average = round(total_similarity / count, 2) if count > 0 else 0
     return results, average
 
+
+
 # --- STEP 1: Upload Model Answer ---
 st.header("Upload Model Answer Sheet")
 model_files = st.file_uploader(
@@ -134,14 +136,26 @@ model_files = st.file_uploader(
 
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
-        model_text = get_text_from_files(model_files, ocr_engine)
-        model_qna = split_answers_by_question(model_text)
-        st.session_state["model_qna"] = model_qna
-        st.success("✅ Model answer saved. Ready to evaluate students.")
-        st.text("🔍 Extracted Model Answers:")
-        st.json(model_qna)
+        try:
+            model_text = get_text_from_files(model_files, ocr_engine)
+            model_qna = split_answers_by_question(model_text)
+            if model_qna:  # Ensure parsing succeeded
+                st.session_state["model_qna"] = model_qna
+                st.success("✅ Model answer saved. Ready to evaluate students.")
+                st.text("🔍 Extracted Model Answers:")
+                st.json(model_qna)
+            else:
+                st.error("⚠️ No questions detected—check your image quality or formatting.")
+        except Exception as e:
+            st.error(f"❌ Error processing model answer: {e}")
+
+elif st.session_state["model_qna"] is None:
+    st.info("Please upload the model answer (PDF or images) and click Process.")
 elif st.session_state["model_qna"]:
-    st.info("✅ Model already uploaded. You may now evaluate students.")
+    st.info("Model loaded. Please upload a student answer to proceed.")
+
+
+
 
 # --- STEP 2: Evaluate Student Answers ---
 if st.session_state["model_qna"]:
