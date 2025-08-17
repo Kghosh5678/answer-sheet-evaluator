@@ -2,34 +2,45 @@ import streamlit as st
 import pytesseract
 import pdfplumber
 from PIL import Image
+import easyocr
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 import pandas as pd
+import io
 
 # --- CONFIG ---
 st.set_page_config(page_title="📚 Answer Sheet Evaluator", layout="centered")
 st.title("📚 Answer Sheet Evaluation App")
 
-# --- LOAD MODEL ---
+# --- LOAD MODELS ---
 @st.cache_resource
 def load_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
+@st.cache_resource
+def load_easyocr_reader():
+    return easyocr.Reader(['en'])
+
 model = load_model()
+easyocr_reader = load_easyocr_reader()
 
 # --- SESSION STATE INIT ---
 if "model_qna" not in st.session_state:
     st.session_state["model_qna"] = None
-
 if "results" not in st.session_state:
     st.session_state["results"] = []
-
 if "student_evaluated" not in st.session_state:
     st.session_state["student_evaluated"] = False
-
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
+
+# --- OCR SELECTION ---
+ocr_engine = st.selectbox(
+    "Choose OCR engine for image-based answers:",
+    options=["pytesseract", "easyocr"],
+    index=0
+)
 
 # --- FUNCTIONS ---
 
@@ -42,22 +53,39 @@ def extract_text_from_pdf(file):
                 text += page_text + "\n"
     return text.strip()
 
-def extract_text_from_image(file):
-    image = Image.open(file).convert("L")
-    return pytesseract.image_to_string(image, lang='eng').strip()
+def extract_text_from_image(file, ocr_engine="pytesseract"):
+    image = Image.open(file).convert("RGB")
+    if ocr_engine == "easyocr":
+        result = easyocr_reader.readtext(image)
+        text = " ".join([entry[1] for entry in result])
+    else:
+        gray = image.convert("L")
+        binarized = gray.point(lambda x: 0 if x < 200 else 255)
+        text = pytesseract.image_to_string(binarized, lang='eng')
+    return text.strip()
 
-def get_text_from_files(files):
-    all_text = ""
-    files = sorted(files, key=lambda x: x.name)
-    for file in files:
-        if file.name.endswith('.pdf'):
-            all_text += extract_text_from_pdf(file) + "\n"
-        else:
-            try:
-                all_text += extract_text_from_image(file) + "\n"
-            except Exception as e:
-                st.error(f"❌ Could not read image {file.name}: {e}")
-    return all_text.strip()
+def images_to_pdf(files):
+    images = [Image.open(f).convert("RGB") for f in files]
+    pdf_bytes = io.BytesIO()
+    images[0].save(pdf_bytes, format="PDF", save_all=True, append_images=images[1:])
+    pdf_bytes.seek(0)
+    return pdf_bytes
+
+def get_text_from_files(files, ocr_engine="pytesseract"):
+    if all(f.type.startswith("image/") for f in files):
+        combined_pdf = images_to_pdf(files)
+        return extract_text_from_pdf(combined_pdf)
+    else:
+        all_text = ""
+        for file in sorted(files, key=lambda x: x.name):
+            if file.name.endswith('.pdf'):
+                all_text += extract_text_from_pdf(file) + "\n"
+            else:
+                try:
+                    all_text += extract_text_from_image(file, ocr_engine=ocr_engine) + "\n"
+                except Exception as e:
+                    st.error(f"❌ Could not read image {file.name}: {e}")
+        return all_text.strip()
 
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
@@ -77,11 +105,9 @@ def compare_answers(model_qna, student_qna):
     results = []
     total_similarity = 0
     count = 0
-
     for q_num in model_qna:
         model_ans = model_qna[q_num]
         student_ans = student_qna.get(q_num)
-
         if student_ans:
             if len(model_ans) < 10 and len(student_ans) < 10:
                 percent = 100.0 if model_ans.strip() == student_ans.strip() else 0.0
@@ -89,13 +115,11 @@ def compare_answers(model_qna, student_qna):
                 embeddings = model.encode([model_ans, student_ans])
                 similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
                 percent = round(similarity * 100, 2)
-
             results.append((q_num, percent))
             total_similarity += percent
             count += 1
         else:
             results.append((q_num, "❌ Not Answered"))
-
     average = round(total_similarity / count, 2) if count > 0 else 0
     return results, average
 
@@ -110,7 +134,7 @@ model_files = st.file_uploader(
 
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
-        model_text = get_text_from_files(model_files)
+        model_text = get_text_from_files(model_files, ocr_engine)
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
         st.success("✅ Model answer saved. Ready to evaluate students.")
@@ -142,7 +166,7 @@ if st.session_state["model_qna"]:
                 st.warning("Please upload the student's answer sheet.")
             else:
                 with st.spinner("Extracting and evaluating..."):
-                    student_text = get_text_from_files(student_files)
+                    student_text = get_text_from_files(student_files, ocr_engine)
                     student_qna = split_answers_by_question(student_text)
 
                     st.text("🧪 Extracted Student Answers:")
@@ -194,13 +218,4 @@ with col2:
 # --- STEP 3: Class Summary & Export ---
 if st.session_state["results"]:
     st.header("📋 Class Evaluation Summary")
-    df = pd.DataFrame(st.session_state["results"])
-    st.dataframe(df, use_container_width=True)
-
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        "📥 Download Full Result (CSV)",
-        data=csv,
-        file_name="class_results.csv",
-        mime='text/csv'
-    )
+    df = pd.DataFrame(st.session
