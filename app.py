@@ -34,6 +34,8 @@ if "student_evaluated" not in st.session_state:
     st.session_state["student_evaluated"] = False
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
+if "student_files" not in st.session_state:
+    st.session_state["student_files"] = None
 
 # --- OCR SELECTION ---
 ocr_engine = st.selectbox(
@@ -72,7 +74,6 @@ def images_to_pdf(files):
     return pdf_bytes
 
 def get_text_from_files(files, ocr_engine="pytesseract"):
-    # If all files are images, convert them to PDF first for better extraction
     if all(f.type.startswith("image/") for f in files):
         combined_pdf = images_to_pdf(files)
         return extract_text_from_pdf(combined_pdf)
@@ -90,13 +91,9 @@ def get_text_from_files(files, ocr_engine="pytesseract"):
 
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
-    # regex pattern to detect question numbers in multiple formats: Q1, 1., Question-1 etc.
     pattern = r'(?:^|\n)\s*(?:[Qq](?:uestion)?[\s\-]*)?(\d{1,4})[\)\.\:\-\s]'
     text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
-    if not matches:
-        st.error("⚠️ No questions detected—check your image quality or formatting.")
-        return {}
     qna = {}
     for i in range(len(matches) - 1):
         start = matches[i].start()
@@ -141,13 +138,13 @@ if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
         model_text = get_text_from_files(model_files, ocr_engine)
         model_qna = split_answers_by_question(model_text)
-        if model_qna:
+        if not model_qna:
+            st.error("⚠️ No questions detected—check your image quality or formatting.")
+        else:
             st.session_state["model_qna"] = model_qna
             st.success("✅ Model answer saved. Ready to evaluate students.")
             st.text("🔍 Extracted Model Answers:")
             st.json(model_qna)
-        else:
-            st.session_state["model_qna"] = None
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
 
@@ -157,7 +154,7 @@ if st.session_state.get("model_qna"):
 
     if not st.session_state["student_evaluated"]:
         st.session_state["student_name"] = st.text_input(
-            "Enter student name or roll number", key="student_name_input"
+            "Enter student name or roll number", value=st.session_state["student_name"], key="student_name_input"
         )
 
         student_files = st.file_uploader(
@@ -177,36 +174,33 @@ if st.session_state.get("model_qna"):
                     student_text = get_text_from_files(student_files, ocr_engine)
                     student_qna = split_answers_by_question(student_text)
 
-                    if not student_qna:
-                        st.error("⚠️ No valid answers detected in student's submission.")
-                    else:
-                        st.text("🧪 Extracted Student Answers:")
-                        st.json(student_qna)
+                    st.text("🧪 Extracted Student Answers:")
+                    st.json(student_qna)
 
-                        results, avg = compare_answers(st.session_state["model_qna"], student_qna)
+                    results, avg = compare_answers(st.session_state["model_qna"], student_qna)
 
-                        st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
-                        table_data = []
-                        for q_num, score in results:
-                            table_data.append({
-                                "Question": f"Q{q_num}",
-                                "Similarity (%)": f"{score}%" if isinstance(score, (float, int)) else score
-                            })
-                        df_result = pd.DataFrame(table_data)
-                        st.dataframe(df_result, use_container_width=True)
+                    st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
+                    table_data = []
+                    for q_num, score in results:
+                        table_data.append({
+                            "Question": f"Q{q_num}",
+                            "Similarity (%)": f"{score}%" if isinstance(score, (float, int)) else score
+                        })
+                    df_result = pd.DataFrame(table_data)
+                    st.dataframe(df_result, use_container_width=True)
 
-                        st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
+                    st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
 
-                        result_row = {
-                            "Student": st.session_state["student_name"],
-                            "Total (%)": avg,
-                            "Marks (/10)": round(avg / 100 * 10, 2)
-                        }
-                        for q_num, score in results:
-                            result_row[f"Q{q_num}"] = score
-                        st.session_state["results"].append(result_row)
+                    result_row = {
+                        "Student": st.session_state["student_name"],
+                        "Total (%)": avg,
+                        "Marks (/10)": round(avg / 100 * 10, 2)
+                    }
+                    for q_num, score in results:
+                        result_row[f"Q{q_num}"] = score
+                    st.session_state["results"].append(result_row)
 
-                        st.session_state["student_evaluated"] = True
+                    st.session_state["student_evaluated"] = True
     else:
         st.success("✅ Student evaluated and added to summary.")
 
@@ -215,10 +209,12 @@ col1, col2 = st.columns(2)
 
 with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
+        # Reset student inputs and show upload again
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
         if "student_files" in st.session_state:
             del st.session_state["student_files"]
+        st.experimental_rerun()
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
