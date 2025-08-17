@@ -147,6 +147,7 @@ elif st.session_state["model_qna"]:
 if st.session_state["model_qna"]:
     st.header("Evaluate Student Answer Sheet")
 
+    # Always show input for student name and upload unless student is already evaluated
     if not st.session_state["student_evaluated"]:
         st.session_state["student_name"] = st.text_input(
             "Enter student name or roll number", key="student_name_input"
