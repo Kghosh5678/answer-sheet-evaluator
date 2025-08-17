@@ -35,6 +35,10 @@ if "student_evaluated" not in st.session_state:
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
 
+# NEW: counter to reset student file uploader by key change
+if "student_counter" not in st.session_state:
+    st.session_state["student_counter"] = 0
+
 # --- OCR SELECTION ---
 ocr_engine = st.selectbox(
     "Choose OCR engine for image-based answers:",
@@ -156,7 +160,7 @@ if st.session_state["model_qna"]:
             "Upload student answer (PDF or images)",
             type=["pdf", "png", "jpg", "jpeg"],
             accept_multiple_files=True,
-            key="student_files"
+            key=f"student_files_{st.session_state['student_counter']}"
         )
 
         if student_files and st.button("🧮 Evaluate Student"):
@@ -206,8 +210,7 @@ with col1:
     if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
-        if "student_files" in st.session_state:
-            del st.session_state["student_files"]
+        st.session_state["student_counter"] += 1  # This resets uploader
 
 with col2:
     if st.button("🔄 Reset Entire App (Start Over)"):
