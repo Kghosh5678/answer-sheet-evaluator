@@ -72,6 +72,7 @@ def images_to_pdf(files):
     return pdf_bytes
 
 def get_text_from_files(files, ocr_engine="pytesseract"):
+    # If all files are images, convert them to PDF first for better extraction
     if all(f.type.startswith("image/") for f in files):
         combined_pdf = images_to_pdf(files)
         return extract_text_from_pdf(combined_pdf)
@@ -86,32 +87,24 @@ def get_text_from_files(files, ocr_engine="pytesseract"):
                 except Exception as e:
                     st.error(f"❌ Could not read image {file.name}: {e}")
         return all_text.strip()
-        
-        
+
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
-    
-    # Add a dummy question at the end to capture the last answer
-    text += "\nQuestion 9999."
-
-    # Pattern supports:
-    # - 1. / 2 / 3)
-    # - Q1. / Q2:
-    # - Question-1 / Question 1:
+    # regex pattern to detect question numbers in multiple formats: Q1, 1., Question-1 etc.
     pattern = r'(?:^|\n)\s*(?:[Qq](?:uestion)?[\s\-]*)?(\d{1,4})[\)\.\:\-\s]'
-
+    text += "\nQuestion 9999."
     matches = list(re.finditer(pattern, text))
+    if not matches:
+        st.error("⚠️ No questions detected—check your image quality or formatting.")
+        return {}
     qna = {}
-
     for i in range(len(matches) - 1):
         start = matches[i].start()
         end = matches[i + 1].start()
-        q_num = matches[i].group(1).lstrip('0')  # e.g., "01" → "1"
+        q_num = matches[i].group(1).lstrip('0')
         answer = text[start:end].strip()
         qna[q_num] = answer
-
     return qna
-
 
 def compare_answers(model_qna, student_qna):
     results = []
@@ -135,8 +128,6 @@ def compare_answers(model_qna, student_qna):
     average = round(total_similarity / count, 2) if count > 0 else 0
     return results, average
 
-
-
 # --- STEP 1: Upload Model Answer ---
 st.header("Upload Model Answer Sheet")
 model_files = st.file_uploader(
@@ -148,32 +139,22 @@ model_files = st.file_uploader(
 
 if model_files and st.button("📖 Process Model Answer"):
     with st.spinner("Extracting model answers..."):
-        try:
-            model_text = get_text_from_files(model_files, ocr_engine)
-            model_qna = split_answers_by_question(model_text)
-            if model_qna:  # Ensure parsing succeeded
-                st.session_state["model_qna"] = model_qna
-                st.success("✅ Model answer saved. Ready to evaluate students.")
-                st.text("🔍 Extracted Model Answers:")
-                st.json(model_qna)
-            else:
-                st.error("⚠️ No questions detected—check your image quality or formatting.")
-        except Exception as e:
-            st.error(f"❌ Error processing model answer: {e}")
-
-elif st.session_state["model_qna"] is None:
-    st.info("Please upload the model answer (PDF or images) and click Process.")
+        model_text = get_text_from_files(model_files, ocr_engine)
+        model_qna = split_answers_by_question(model_text)
+        if model_qna:
+            st.session_state["model_qna"] = model_qna
+            st.success("✅ Model answer saved. Ready to evaluate students.")
+            st.text("🔍 Extracted Model Answers:")
+            st.json(model_qna)
+        else:
+            st.session_state["model_qna"] = None
 elif st.session_state["model_qna"]:
-    st.info("Model loaded. Please upload a student answer to proceed.")
-
-
-
+    st.info("✅ Model already uploaded. You may now evaluate students.")
 
 # --- STEP 2: Evaluate Student Answers ---
-if st.session_state["model_qna"]:
+if st.session_state.get("model_qna"):
     st.header("Evaluate Student Answer Sheet")
 
-    # Always show input for student name and upload unless student is already evaluated
     if not st.session_state["student_evaluated"]:
         st.session_state["student_name"] = st.text_input(
             "Enter student name or roll number", key="student_name_input"
@@ -196,33 +177,36 @@ if st.session_state["model_qna"]:
                     student_text = get_text_from_files(student_files, ocr_engine)
                     student_qna = split_answers_by_question(student_text)
 
-                    st.text("🧪 Extracted Student Answers:")
-                    st.json(student_qna)
+                    if not student_qna:
+                        st.error("⚠️ No valid answers detected in student's submission.")
+                    else:
+                        st.text("🧪 Extracted Student Answers:")
+                        st.json(student_qna)
 
-                    results, avg = compare_answers(st.session_state["model_qna"], student_qna)
+                        results, avg = compare_answers(st.session_state["model_qna"], student_qna)
 
-                    st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
-                    table_data = []
-                    for q_num, score in results:
-                        table_data.append({
-                            "Question": f"Q{q_num}",
-                            "Similarity (%)": f"{score}%" if isinstance(score, (float, int)) else score
-                        })
-                    df_result = pd.DataFrame(table_data)
-                    st.dataframe(df_result, use_container_width=True)
+                        st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
+                        table_data = []
+                        for q_num, score in results:
+                            table_data.append({
+                                "Question": f"Q{q_num}",
+                                "Similarity (%)": f"{score}%" if isinstance(score, (float, int)) else score
+                            })
+                        df_result = pd.DataFrame(table_data)
+                        st.dataframe(df_result, use_container_width=True)
 
-                    st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
+                        st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
 
-                    result_row = {
-                        "Student": st.session_state["student_name"],
-                        "Total (%)": avg,
-                        "Marks (/10)": round(avg / 100 * 10, 2)
-                    }
-                    for q_num, score in results:
-                        result_row[f"Q{q_num}"] = score
-                    st.session_state["results"].append(result_row)
+                        result_row = {
+                            "Student": st.session_state["student_name"],
+                            "Total (%)": avg,
+                            "Marks (/10)": round(avg / 100 * 10, 2)
+                        }
+                        for q_num, score in results:
+                            result_row[f"Q{q_num}"] = score
+                        st.session_state["results"].append(result_row)
 
-                    st.session_state["student_evaluated"] = True
+                        st.session_state["student_evaluated"] = True
     else:
         st.success("✅ Student evaluated and added to summary.")
 
