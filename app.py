@@ -218,4 +218,13 @@ with col2:
 # --- STEP 3: Class Summary & Export ---
 if st.session_state["results"]:
     st.header("📋 Class Evaluation Summary")
-    df = pd.DataFrame(st.session
+    df = pd.DataFrame(st.session_state["results"])
+    st.dataframe(df, use_container_width=True)
+
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Full Result (CSV)",
+        data=csv,
+        file_name="class_results.csv",
+        mime='text/csv'
+    )
