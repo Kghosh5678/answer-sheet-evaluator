@@ -26,12 +26,21 @@ model = load_model()
 easyocr_reader = load_easyocr_reader()
 
 # --- SESSION STATE INIT ---
-for key in ["model_qna", "results", "student_evaluated", "student_name"]:
-    if key not in st.session_state:
-        st.session_state[key] = None if key == "model_qna" else "" if key == "student_name" else False if key == "student_evaluated" else []
+if "model_qna" not in st.session_state:
+    st.session_state["model_qna"] = None
+if "results" not in st.session_state:
+    st.session_state["results"] = []
+if "student_evaluated" not in st.session_state:
+    st.session_state["student_evaluated"] = False
+if "student_name" not in st.session_state:
+    st.session_state["student_name"] = ""
 
 # --- OCR SELECTION ---
-ocr_engine = st.selectbox("Choose OCR engine for image-based answers:", ["pytesseract", "easyocr"])
+ocr_engine = st.selectbox(
+    "Choose OCR engine for image-based answers:",
+    options=["pytesseract", "easyocr"],
+    index=0
+)
 
 # --- FUNCTIONS ---
 
@@ -129,6 +138,7 @@ if model_files and st.button("📖 Process Model Answer"):
         model_qna = split_answers_by_question(model_text)
         st.session_state["model_qna"] = model_qna
         st.success("✅ Model answer saved. Ready to evaluate students.")
+        st.text("🔍 Extracted Model Answers:")
         st.json(model_qna)
 elif st.session_state["model_qna"]:
     st.info("✅ Model already uploaded. You may now evaluate students.")
@@ -138,7 +148,9 @@ if st.session_state["model_qna"]:
     st.header("Evaluate Student Answer Sheet")
 
     if not st.session_state["student_evaluated"]:
-        st.session_state["student_name"] = st.text_input("Enter student name or roll number")
+        st.session_state["student_name"] = st.text_input(
+            "Enter student name or roll number", key="student_name_input"
+        )
 
         student_files = st.file_uploader(
             "Upload student answer (PDF or images)",
@@ -150,24 +162,28 @@ if st.session_state["model_qna"]:
         if student_files and st.button("🧮 Evaluate Student"):
             if not st.session_state["student_name"]:
                 st.warning("Please enter the student's name or ID.")
+            elif not student_files:
+                st.warning("Please upload the student's answer sheet.")
             else:
                 with st.spinner("Extracting and evaluating..."):
                     student_text = get_text_from_files(student_files, ocr_engine)
                     student_qna = split_answers_by_question(student_text)
 
+                    st.text("🧪 Extracted Student Answers:")
                     st.json(student_qna)
 
                     results, avg = compare_answers(st.session_state["model_qna"], student_qna)
 
-                    st.subheader(f"📊 Evaluation for: {st.session_state['student_name']}")
-                    df_result = pd.DataFrame([
-                        {
+                    st.subheader(f"📊 Question-wise Evaluation: {st.session_state['student_name']}")
+                    table_data = []
+                    for q_num, score in results:
+                        table_data.append({
                             "Question": f"Q{q_num}",
                             "Similarity (%)": f"{score}%" if isinstance(score, (float, int)) else score
-                        }
-                        for q_num, score in results
-                    ])
+                        })
+                    df_result = pd.DataFrame(table_data)
                     st.dataframe(df_result, use_container_width=True)
+
                     st.success(f"🎯 Final Suggested Marks: {avg / 100 * 10:.2f} / 10")
 
                     result_row = {
@@ -185,24 +201,30 @@ if st.session_state["model_qna"]:
 
 # --- Reset Buttons ---
 col1, col2 = st.columns(2)
+
 with col1:
-    if st.button("➕ Add Next Student"):
+    if st.button("➕ Add Next Student (Clear Student Input)"):
         st.session_state["student_name"] = ""
         st.session_state["student_evaluated"] = False
         if "student_files" in st.session_state:
             del st.session_state["student_files"]
 
 with col2:
-    if st.button("🔄 Reset Entire App"):
+    if st.button("🔄 Reset Entire App (Start Over)"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.experimental_rerun()
 
-# --- STEP 3: Class Summary ---
+# --- STEP 3: Class Summary & Export ---
 if st.session_state["results"]:
     st.header("📋 Class Evaluation Summary")
     df = pd.DataFrame(st.session_state["results"])
     st.dataframe(df, use_container_width=True)
 
     csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Full Result (CSV)", data=csv, file_name="class_results.csv", mime='text/csv')
+    st.download_button(
+        "📥 Download Full Result (CSV)",
+        data=csv,
+        file_name="class_results.csv",
+        mime='text/csv'
+    )
