@@ -86,20 +86,32 @@ def get_text_from_files(files, ocr_engine="pytesseract"):
                 except Exception as e:
                     st.error(f"❌ Could not read image {file.name}: {e}")
         return all_text.strip()
-
+        
+        
 def split_answers_by_question(text):
     text = text.replace('\r', '').replace('\t', '')
-    pattern = r'(?:^|\n)\s*(?:[Qq](?:uestion)?[\s\-]*)?(\d{1,4})[\)\.\:\-\s]'
+    
+    # Add a dummy question at the end to capture the last answer
     text += "\nQuestion 9999."
+
+    # Pattern supports:
+    # - 1. / 2 / 3)
+    # - Q1. / Q2:
+    # - Question-1 / Question 1:
+    pattern = r'(?:^|\n)\s*(?:[Qq](?:uestion)?[\s\-]*)?(\d{1,4})[\)\.\:\-\s]'
+
     matches = list(re.finditer(pattern, text))
     qna = {}
+
     for i in range(len(matches) - 1):
         start = matches[i].start()
         end = matches[i + 1].start()
-        q_num = matches[i].group(1).lstrip('0')
+        q_num = matches[i].group(1).lstrip('0')  # e.g., "01" → "1"
         answer = text[start:end].strip()
         qna[q_num] = answer
+
     return qna
+
 
 def compare_answers(model_qna, student_qna):
     results = []
